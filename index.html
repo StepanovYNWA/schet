@@ -1899,6 +1899,49 @@ function updateGostQr() {
   }
 }
 
+// Build the GOST QR as a PNG data URL on demand, independent of the preview panel.
+// Used by generatePDF so the QR is present even when the preview (and its
+// #preview-qr-host) is hidden — e.g. on mobile, where .preview-col is display:none.
+function computeQrDataUrl(data, t) {
+  const s = data.seller;
+  if (!s.account || !s.bic || !s.bank || !s.corr || !s.name) return null;
+  if (typeof QRCode === 'undefined') return null;
+  const purpose = data.payment_purpose || `Оплата по счёту № ${data.invoice_number} от ${formatDateRu(data.invoice_date)}`;
+  const payload = buildGostQrPayload({
+    name: s.name,
+    account: s.account,
+    bankName: s.bank,
+    bic: s.bic,
+    corrAccount: s.corr,
+    inn: s.inn,
+    kpp: s.kpp,
+    sum: t.totalGross,
+    purpose: purpose
+  });
+  const tmp = document.createElement('div');
+  tmp.style.position = 'absolute';
+  tmp.style.left = '-9999px';
+  tmp.style.top = '0';
+  document.body.appendChild(tmp);
+  try {
+    new QRCode(tmp, {
+      text: utf8EncodeForQrcodejs(payload),
+      width: 160,
+      height: 160,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    const c = tmp.querySelector('canvas');
+    if (c) return c.toDataURL('image/png');
+    const img = tmp.querySelector('img');
+    return img && img.src ? img.src : null;
+  } catch (e) {
+    console.error('QR generation failed:', e);
+    return null;
+  } finally {
+    document.body.removeChild(tmp);
+  }
+}
+
 /* ============================================================
    LOOKUPS — INN (egrul.org) and BIC
    Note: This is a demo. In production proxy through your backend
@@ -2019,9 +2062,10 @@ async function generatePDF() {
     showToast('Библиотека для PDF не загрузилась. Проверьте интернет-соединение и обновите страницу.', 'error');
     return;
   }
+  // If QR requested but its library is missing, don't block the whole invoice —
+  // just warn once and produce the PDF without the QR.
   if (data.include_qr && typeof QRCode === 'undefined') {
-    showToast('Библиотека для QR-кода не загрузилась. Можно скачать счёт без QR — снимите галочку «Включить QR-код».', 'error');
-    return;
+    showToast('QR-библиотека не загрузилась — счёт скачается без QR-кода.', 'error');
   }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -2101,9 +2145,16 @@ async function generatePDF() {
   y = bankY + bankH + 8;
 
   // === QR (if requested) — top right ===
-  if (data.include_qr && state.qrDataUrl) {
+  // Build fresh at download time so the QR is present even when the preview
+  // (and its host element) is hidden, e.g. on mobile. Falls back to the
+  // preview's cached data URL if on-demand generation returns nothing.
+  let qrForPdf = null;
+  if (data.include_qr) {
+    qrForPdf = computeQrDataUrl(data, t) || state.qrDataUrl;
+  }
+  if (qrForPdf) {
     const qrSize = 32;
-    doc.addImage(state.qrDataUrl, 'PNG', PAGE_W - MARGIN - qrSize, y - 2, qrSize, qrSize);
+    doc.addImage(qrForPdf, 'PNG', PAGE_W - MARGIN - qrSize, y - 2, qrSize, qrSize);
   }
 
   // === Title ===
@@ -2114,7 +2165,7 @@ async function generatePDF() {
   y += 8;
   // underline
   doc.setLineWidth(0.6);
-  doc.line(MARGIN, y, PAGE_W - MARGIN - (data.include_qr && state.qrDataUrl ? 36 : 0), y);
+  doc.line(MARGIN, y, PAGE_W - MARGIN - (qrForPdf ? 36 : 0), y);
   doc.setLineWidth(0.2);
   y += 6;
 
