@@ -2280,6 +2280,19 @@ async function generatePDF() {
   doc.save(filename);
 
   bumpDailyCount();
+
+  // Snapshot of the last successful invoice — read by the /akt/ tool
+  // to prefill an act ("Из последнего счёта"). Same origin => localStorage shared.
+  try {
+    localStorage.setItem('ipdoki.invoice.last.v1', JSON.stringify({
+      saved_at: new Date().toISOString(),
+      data: data,
+      totals: t
+    }));
+  } catch (e) {
+    // storage may be full or blocked — never break PDF generation over it
+  }
+
   showToast('PDF готов: ' + filename, 'success');
   trackGoal('pdf_generated', {
     seller_form: data.seller.form,
