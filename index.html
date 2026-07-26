@@ -1890,7 +1890,9 @@ function buildGostQrPng(data, t, targetPx) {
     purpose: purpose
   });
   try {
-    const qr = qrcode(0, 'M'); // type 0 = auto-fit (up to version 40), EC level M
+    const qr = qrcode(0, 'L'); // type 0 = auto-fit (up to version 40); EC level L
+    // keeps the module count (and density) down for the long GOST payload, which
+    // scans more reliably at print size than a denser M-level code.
     // Feed UTF-8 bytes as a binary string; Byte mode keeps each char code (0–255)
     // as one byte, so Cyrillic round-trips correctly.
     qr.addData(utf8EncodeForQrcodejs(payload), 'Byte');
@@ -2145,10 +2147,12 @@ async function generatePDF() {
   if (data.include_qr) {
     qrForPdf = computeQrDataUrl(data, t) || state.qrDataUrl;
   }
+  const qrSize = 34;
   if (qrForPdf) {
-    const qrSize = 32;
     doc.addImage(qrForPdf, 'PNG', PAGE_W - MARGIN - qrSize, y - 2, qrSize, qrSize);
   }
+  // Horizontal space to keep the title underline and party lines clear of the QR.
+  const qrReserve = qrForPdf ? (qrSize + 5) : 0;
 
   // === Title ===
   doc.setFont('DejaVuSans', 'bold');
@@ -2158,7 +2162,7 @@ async function generatePDF() {
   y += 8;
   // underline
   doc.setLineWidth(0.6);
-  doc.line(MARGIN, y, PAGE_W - MARGIN - (qrForPdf ? 36 : 0), y);
+  doc.line(MARGIN, y, PAGE_W - MARGIN - (qrForPdf ? qrSize + 3 : 0), y);
   doc.setLineWidth(0.2);
   y += 6;
 
@@ -2170,7 +2174,7 @@ async function generatePDF() {
     doc.setFont('DejaVuSans','bold');
     doc.text(label + ':', MARGIN, yStart);
     doc.setFont('DejaVuSans','normal');
-    const wrapped = doc.splitTextToSize(partyText, PAGE_W - MARGIN*2 - 22);
+    const wrapped = doc.splitTextToSize(partyText, PAGE_W - MARGIN*2 - 22 - qrReserve);
     doc.text(wrapped, MARGIN + 22, yStart);
     return yStart + wrapped.length * 4 + 3;
   }
