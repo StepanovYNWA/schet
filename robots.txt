@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://example.github.io/invoice/sitemap.xml
+Sitemap: https://ipdoki.ru/sitemap.xml
